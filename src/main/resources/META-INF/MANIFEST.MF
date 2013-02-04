@@ -1,0 +1,4 @@
+Premain-Class: net.pnyxter.actor.instrument.ActorAgent
+Can-Redefine-Classes: true
+Can-Retransform-Classes: true
+Created-By: Henrik Gustafsson (henrik.gson@gmail.com)
