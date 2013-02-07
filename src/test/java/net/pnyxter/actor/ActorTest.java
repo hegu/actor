@@ -5,15 +5,14 @@ import org.junit.Test;
 public class ActorTest {
 
 	interface Subscriber {
-		void currentValue(int value);
+		void currentValue(Integer value);
 	}
 
 	@Actor
 	class SubscriberActor implements Subscriber {
-
 		@Override
 		@Inbox
-		public void currentValue(int value) {
+		public void currentValue(Integer value) {
 			System.out.println("Current value: " + value);
 		}
 	}

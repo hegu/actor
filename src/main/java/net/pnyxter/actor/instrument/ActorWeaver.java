@@ -1,8 +1,9 @@
 package net.pnyxter.actor.instrument;
 
+import java.io.PrintWriter;
 import java.util.Arrays;
-import java.util.List;
 import java.util.concurrent.Future;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import net.pnyxter.actor.Actor;
 import net.pnyxter.actor.Inbox;
@@ -18,8 +19,8 @@ import org.objectweb.asm.Opcodes;
 import org.objectweb.asm.Type;
 import org.objectweb.asm.signature.SignatureReader;
 import org.objectweb.asm.signature.SignatureVisitor;
-import org.objectweb.asm.tree.AnnotationNode;
 import org.objectweb.asm.tree.MethodNode;
+import org.objectweb.asm.util.TraceClassVisitor;
 
 public class ActorWeaver implements Opcodes {
 
@@ -63,9 +64,9 @@ public class ActorWeaver implements Opcodes {
 			this.methodDesc = description;
 
 			if (signature == null) {
-				this.methodSignature = signature;
-			} else {
 				this.methodSignature = description;
+			} else {
+				this.methodSignature = signature;
 			}
 
 			new SignatureReader(methodSignature).accept(this);
@@ -108,7 +109,7 @@ public class ActorWeaver implements Opcodes {
 				@Override
 				public void visitClassType(String name) {
 					if (desc == null) {
-						desc = array + name + ";";
+						desc = array + "L" + name + ";";
 					}
 				}
 
@@ -171,6 +172,9 @@ public class ActorWeaver implements Opcodes {
 	}
 
 	private static byte[] createInboxCallAction(CallerDescription caller) {
+
+		System.out.println("Building inbox caller class: " + caller.className);
+
 		ClassWriter cw = new ClassWriter(ClassWriter.COMPUTE_MAXS | ClassWriter.COMPUTE_FRAMES);
 		FieldVisitor fv;
 		MethodVisitor mv;
@@ -216,20 +220,20 @@ public class ActorWeaver implements Opcodes {
 			for (String a : caller.parameterDesc) {
 				i++;
 				mv.visitVarInsn(ALOAD, 0);
-				mv.visitLdcInsn(Type.getType("L" + a + ";"));
+				mv.visitLdcInsn(Type.getType(a));
 				mv.visitVarInsn(ALOAD, 2);
 				mv.visitMethodInsn(INVOKESTATIC, "net/pnyxter/immutalizer/Immutalizer", "ensureImmutable", "(Ljava/lang/Class;Ljava/lang/Object;)Ljava/lang/Object;");
 				mv.visitTypeInsn(CHECKCAST, a);
-				mv.visitFieldInsn(PUTFIELD, fullInnerClassName, "a" + i, "L" + a + ";");
+				mv.visitFieldInsn(PUTFIELD, fullInnerClassName, "a" + i, a);
 			}
 			mv.visitInsn(RETURN);
 			Label l3 = new Label();
 			mv.visitLabel(l3);
-			mv.visitLocalVariable("this", "Lnet/pnyxter/actor/Logger$Caller_logString;", null, l0, l3, 0);
+			mv.visitLocalVariable("this", "L" + fullInnerClassName + ";", null, l0, l3, 0);
 			i = 0;
 			for (String a : caller.parameterDesc) {
 				i++;
-				mv.visitLocalVariable("a" + i, "L" + a + ";", null, l0, l3, 1 + i);
+				mv.visitLocalVariable("a" + i, a, null, l0, l3, 1 + i);
 			}
 			mv.visitMaxs(0, 0); // COMPUTE_MAXS
 			mv.visitEnd();
@@ -247,7 +251,7 @@ public class ActorWeaver implements Opcodes {
 			for (String a : caller.parameterDesc) {
 				i++;
 				mv.visitVarInsn(ALOAD, 0);
-				mv.visitFieldInsn(GETFIELD, fullInnerClassName, "a" + i, "L" + a + ";");
+				mv.visitFieldInsn(GETFIELD, fullInnerClassName, "a" + i, a);
 			}
 
 			mv.visitMethodInsn(INVOKEVIRTUAL, caller.outerClassName, IN_ACTOR_PREFIX + caller.methodName, caller.methodDesc);
@@ -255,28 +259,41 @@ public class ActorWeaver implements Opcodes {
 
 			Label l2 = new Label();
 			mv.visitLabel(l2);
-			mv.visitLocalVariable("this", "L" + fullInnerClassName + ";", null, l0, l2, 0);
+			mv.visitLocalVariable("this$0", "L" + fullInnerClassName + ";", null, l0, l2, 0);
 			mv.visitMaxs(0, 0); // COMPUTE_MAXS
 			mv.visitEnd();
 		}
 		cw.visitEnd();
 
+		// CheckClassAdapter.verify(new ClassReader(cw.toByteArray()), false,
+		// new PrintWriter(System.out));
+
+		new ClassReader(cw.toByteArray()).accept(new TraceClassVisitor(new PrintWriter(System.out)), 0);
+
 		return cw.toByteArray();
 	}
 
-	public static byte[] weaveActor(final String className, byte[] b, final ActorClassLoader actorLoader) {
+	public static byte[] weaveActor(final String className, byte[] b, final ClassDefiner actorLoader) {
 
-		ClassWriter cw = new ClassWriter(ClassWriter.COMPUTE_MAXS | ClassWriter.COMPUTE_FRAMES);
+		ClassReader cr = new ClassReader(b);
+		ClassWriter cw = new ClassWriter(cr, ClassWriter.COMPUTE_MAXS | ClassWriter.COMPUTE_FRAMES);
+
+		System.out.println("Reading: " + className);
+
+		final AtomicBoolean actor = new AtomicBoolean(false);
 
 		ClassVisitor cv = new ClassVisitor(ASM4, cw) {
-			boolean actor = false;
+			boolean queueAdded = false;
 
 			String source = null;
 
 			@Override
 			public AnnotationVisitor visitAnnotation(String desc, boolean visible) {
-				if (!actor && ACTOR_DESC.equals(desc)) {
-					actor = true;
+				if (!actor.get() && ACTOR_DESC.equals(desc)) {
+
+					System.out.println("Actor detected: " + className);
+
+					actor.set(true);
 					return IGNORE_ANNOTATION;
 				} else {
 					return super.visitAnnotation(desc, visible);
@@ -289,59 +306,120 @@ public class ActorWeaver implements Opcodes {
 				super.visitSource(source, debug);
 			}
 
+			private void addQueue() {
+				if (!queueAdded) {
+					queueAdded = true;
+
+					System.out.println("Queue added to actor: " + className);
+
+					FieldVisitor fv = super.visitField(ACC_PRIVATE + ACC_FINAL, "queue", "Lnet/pnyxter/actor/dispatcher/ActorQueue;", null, null);
+					fv.visitEnd();
+				}
+			}
+
 			@Override
 			public MethodVisitor visitMethod(int access, String name, String desc, String signature, final String[] exceptionsArray) {
+				// System.out.println("Scanning: " + className + "#" + name);
 
-				if (actor) {
+				if (actor.get()) {
+
+					addQueue();
+
 					return new MethodNode(ASM4, access, name, desc, signature, exceptionsArray) {
 						int line = 0;
 						boolean inbox = false;
 
 						@Override
 						public void visitLineNumber(int line, Label start) {
-							if (!inbox) {
+							if (this.line == 0) {
+
+								System.out.println("First line detected: " + source + ":" + line);
+
 								this.line = line;
 							}
 							super.visitLineNumber(line, start);
 						}
 
-						@SuppressWarnings("unchecked")
+						@Override
+						public AnnotationVisitor visitAnnotation(String desc, boolean visible) {
+							if (INBOX_DESC.equals(desc)) {
+								System.out.println("Inbox detected: " + className + "#" + name);
+								inbox = true;
+
+								return IGNORE_ANNOTATION;
+							}
+							return super.visitAnnotation(desc, visible);
+						}
+
 						@Override
 						public void visitEnd() {
 							super.visitEnd();
 
-							for (AnnotationNode a : (List<AnnotationNode>) invisibleAnnotations) {
-								if (INBOX_DESC.equals(a.desc)) {
-									inbox = true;
-								}
-							}
 							if (!inbox) {
+								System.out.println("Forward plain method: " + className + "#" + name);
+
 								accept(cv);
 							} else {
+								System.out.println("Create inbox method: " + className + "#" + name);
 
 								CallerDescription caller = new CallerDescription(className, name, desc, signature, source, line);
 
-								actorLoader.defineActorHelperClass(caller.getFullClassName(), createInboxCallAction(caller));
+								actorLoader.defineClass(Type.getObjectType(caller.getFullClassName()).getClassName(), createInboxCallAction(caller));
 
 								MethodVisitor enqueueMethod = cv.visitMethod(access, name, desc, signature, exceptionsArray);
+								enqueueMethod.visitCode();
+								Label l0 = new Label();
+								enqueueMethod.visitLabel(l0);
+								enqueueMethod.visitLineNumber(line, l0);
+								enqueueMethod.visitVarInsn(ALOAD, 0);
+								enqueueMethod.visitFieldInsn(GETFIELD, caller.outerClassName, "queue", "Lnet/pnyxter/actor/dispatcher/ActorQueue;");
+								enqueueMethod.visitTypeInsn(NEW, caller.getFullClassName());
+								enqueueMethod.visitInsn(DUP);
+
+								for (int i = 0; i <= caller.parameterDesc.length; i++) {
+									enqueueMethod.visitVarInsn(ALOAD, i);
+								}
+
+								enqueueMethod.visitMethodInsn(INVOKESPECIAL, caller.getFullClassName(), "<init>", caller.constructorSignature);
+								enqueueMethod.visitMethodInsn(INVOKEVIRTUAL, "net/pnyxter/actor/dispatcher/ActorQueue", "add", "(Lnet/pnyxter/actor/dispatcher/ActorQueue$Action;)V");
+								enqueueMethod.visitInsn(RETURN);
+								Label l2 = new Label();
+								enqueueMethod.visitLabel(l2);
+								enqueueMethod.visitLocalVariable("this", "L" + caller.outerClassName + ";", null, l0, l2, 0);
+								int i = 0;
+								for (String pDesc : caller.parameterDesc) {
+									i++;
+									enqueueMethod.visitLocalVariable("a" + i, pDesc, null, l0, l2, 1);
+								}
+
+								enqueueMethod.visitMaxs(0, 0);
 								enqueueMethod.visitEnd();
 
 								access = 0;
 								name = IN_ACTOR_PREFIX + name;
+
+								System.out.println("Create execution method: " + className + "#" + name);
 
 								accept(cv);
 							}
 						}
 					};
 				} else {
-					return super.visitMethod(access, className, desc, signature, exceptionsArray);
+					return super.visitMethod(access, name, desc, signature, exceptionsArray);
 				}
 			}
 		};
 
-		ClassReader cr = new ClassReader(b);
 		cr.accept(cv, 0);
 
-		return cw.toByteArray();
+		// CheckClassAdapter.verify(new ClassReader(cw.toByteArray()), false,
+		// new PrintWriter(System.out));
+
+		if (actor.get()) {
+			new ClassReader(cw.toByteArray()).accept(new TraceClassVisitor(new PrintWriter(System.out)), 0);
+
+			return cw.toByteArray();
+		}
+		return null;
 	}
 }

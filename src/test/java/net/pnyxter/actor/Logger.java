@@ -17,6 +17,10 @@ public class Logger {
 		private final String message;
 		private final Collection<String> values;
 
+		private class TEST {
+
+		}
+
 		Caller_logString(String message, Collection<String> values) {
 			this.message = Immutalizer.ensureImmutable(String.class, message);
 			this.values = Immutalizer.ensureImmutable(Collection.class, values);
@@ -37,7 +41,6 @@ public class Logger {
 	@Inbox
 	public void log(String message, Collection<String> values) {
 		queue.add(new Caller_logString(message, values));
-		System.out.println(message);
 	}
 
 	void __internal__log(String message, Collection<String> values) {
