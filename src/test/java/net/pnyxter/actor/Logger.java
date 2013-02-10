@@ -1,29 +1,29 @@
 package net.pnyxter.actor;
 
 import java.util.Collection;
-import java.util.Map;
-import java.util.Set;
+import java.util.concurrent.Future;
 
 import net.pnyxter.actor.dispatcher.ActorQueue;
+import net.pnyxter.actor.dispatcher.ActorRef;
+import net.pnyxter.actor.dispatcher.ActorThreads;
+import net.pnyxter.actor.system.ActorSystem;
 import net.pnyxter.immutalizer.Immutalizer;
 
 @Actor
 public class Logger {
 
-	private final ActorQueue queue = new ActorQueue();
+	private final long __in__actor__actorId = ActorSystem.nextActorId();
+	private transient final ActorQueue __in__actor__queue;
+	private transient final ActorRef __in__actor__spawnwer;
 
 	private final class Caller_logString extends ActorQueue.Action {
 
 		private final String message;
-		private final Collection<String> values;
+		private final long values;
 
-		private class TEST {
-
-		}
-
-		Caller_logString(String message, Collection<String> values) {
+		Caller_logString(String message, long values) {
 			this.message = Immutalizer.ensureImmutable(String.class, message);
-			this.values = Immutalizer.ensureImmutable(Collection.class, values);
+			this.values = values;
 		}
 
 		@Override
@@ -32,18 +32,22 @@ public class Logger {
 		}
 	}
 
-	@Inbox
-	public <T extends String, Y extends Set<Integer>> Map<Integer, T> getSize() {
-		return null;
-		// return ActorUtil.returnFuture(7);
+	public Logger() {
+		__in__actor__queue = new ActorQueue();
+		__in__actor__spawnwer = ActorThreads.getCurrentActor();
 	}
 
 	@Inbox
-	public void log(String message, Collection<String> values) {
-		queue.add(new Caller_logString(message, values));
+	public Future<Integer> getSize() {
+		return ActorUtil.returnFuture(7);
 	}
 
-	void __internal__log(String message, Collection<String> values) {
+	@Inbox
+	public void log(String message, long values) {
+		__in__actor__queue.add(new Caller_logString(message, values));
+	}
+
+	void __internal__log(String message, long values) {
 		System.out.println(message);
 	}
 }

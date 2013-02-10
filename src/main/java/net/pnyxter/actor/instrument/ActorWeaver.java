@@ -103,6 +103,7 @@ public class ActorWeaver implements Opcodes {
 				public void visitBaseType(char descriptor) {
 					if (desc == null) {
 						desc = array + String.valueOf(descriptor);
+						visitEnd();
 					}
 				}
 
@@ -219,11 +220,35 @@ public class ActorWeaver implements Opcodes {
 			i = 0;
 			for (String a : caller.parameterDesc) {
 				i++;
+
 				mv.visitVarInsn(ALOAD, 0);
-				mv.visitLdcInsn(Type.getType(a));
-				mv.visitVarInsn(ALOAD, 2);
-				mv.visitMethodInsn(INVOKESTATIC, "net/pnyxter/immutalizer/Immutalizer", "ensureImmutable", "(Ljava/lang/Class;Ljava/lang/Object;)Ljava/lang/Object;");
-				mv.visitTypeInsn(CHECKCAST, a);
+
+				if (a.startsWith("L")) {
+					mv.visitLdcInsn(Type.getType(a));
+					mv.visitVarInsn(ALOAD, i + 1);
+					mv.visitMethodInsn(INVOKESTATIC, "net/pnyxter/immutalizer/Immutalizer", "ensureImmutable", "(Ljava/lang/Class;Ljava/lang/Object;)Ljava/lang/Object;");
+					mv.visitTypeInsn(CHECKCAST, a);
+				} else {
+					switch (a) {
+					case "I":
+					case "B":
+					case "Z":
+						mv.visitVarInsn(ILOAD, i + 1);
+						break;
+					case "J":
+						mv.visitVarInsn(LLOAD, i + 1);
+						break;
+					case "F":
+						mv.visitVarInsn(FLOAD, i + 1);
+						break;
+					case "D":
+						mv.visitVarInsn(DLOAD, i + 1);
+						break;
+					default:
+						throw new ClassFormatError("Unsuported type on actor method: " + a);
+					}
+				}
+
 				mv.visitFieldInsn(PUTFIELD, fullInnerClassName, "a" + i, a);
 			}
 			mv.visitInsn(RETURN);
@@ -265,9 +290,6 @@ public class ActorWeaver implements Opcodes {
 		}
 		cw.visitEnd();
 
-		// CheckClassAdapter.verify(new ClassReader(cw.toByteArray()), false,
-		// new PrintWriter(System.out));
-
 		new ClassReader(cw.toByteArray()).accept(new TraceClassVisitor(new PrintWriter(System.out)), 0);
 
 		return cw.toByteArray();
@@ -283,7 +305,7 @@ public class ActorWeaver implements Opcodes {
 		final AtomicBoolean actor = new AtomicBoolean(false);
 
 		ClassVisitor cv = new ClassVisitor(ASM4, cw) {
-			boolean queueAdded = false;
+			boolean fieldsAdded = false;
 
 			String source = null;
 
@@ -306,14 +328,14 @@ public class ActorWeaver implements Opcodes {
 				super.visitSource(source, debug);
 			}
 
-			private void addQueue() {
-				if (!queueAdded) {
-					queueAdded = true;
+			private void addActorFields() {
+				if (!fieldsAdded) {
+					fieldsAdded = true;
 
-					System.out.println("Queue added to actor: " + className);
+					System.out.println("Fields added to actor: " + className);
 
-					FieldVisitor fv = super.visitField(ACC_PRIVATE + ACC_FINAL, "queue", "Lnet/pnyxter/actor/dispatcher/ActorQueue;", null, null);
-					fv.visitEnd();
+					super.visitField(ACC_PRIVATE + ACC_FINAL + ACC_TRANSIENT, IN_ACTOR_PREFIX + "queue", "Lnet/pnyxter/actor/dispatcher/ActorQueue;", null, null).visitEnd();
+					super.visitField(ACC_PRIVATE + ACC_FINAL + ACC_TRANSIENT, IN_ACTOR_PREFIX + "spawner", "Lnet/pnyxter/actor/dispatcher/ActorRef;", null, null).visitEnd();
 				}
 			}
 
@@ -323,7 +345,50 @@ public class ActorWeaver implements Opcodes {
 
 				if (actor.get()) {
 
-					addQueue();
+					addActorFields();
+
+					if ("<init>".equals(name)) {
+						return new MethodVisitor(ASM4, super.visitMethod(access, name, desc, signature, exceptionsArray)) {
+							boolean superCalled = false;
+
+							int currentLine = 0;
+
+							@Override
+							public void visitLineNumber(int line, Label start) {
+								currentLine = line;
+								super.visitLineNumber(line, start);
+							}
+
+							@Override
+							public void visitMethodInsn(int opcode, String owner, String name, String desc) {
+								super.visitMethodInsn(opcode, owner, name, desc);
+
+								if (!superCalled && "<init>".equals(name)) {
+									superCalled = true;
+
+									Label l1 = new Label();
+									mv.visitLabel(l1);
+									mv.visitLineNumber(currentLine, l1);
+
+									super.visitVarInsn(ALOAD, 0);
+									super.visitTypeInsn(NEW, "net/pnyxter/actor/dispatcher/ActorQueue");
+									super.visitInsn(DUP);
+									super.visitMethodInsn(INVOKESPECIAL, "net/pnyxter/actor/dispatcher/ActorQueue", "<init>", "()V");
+									super.visitFieldInsn(PUTFIELD, className, IN_ACTOR_PREFIX + "queue", "Lnet/pnyxter/actor/dispatcher/ActorQueue;");
+
+									Label l2 = new Label();
+									mv.visitLabel(l2);
+									mv.visitLineNumber(currentLine, l2);
+
+									super.visitVarInsn(ALOAD, 0);
+									super.visitMethodInsn(INVOKESTATIC, "net/pnyxter/actor/dispatcher/ActorThreads", "getCurrentActor", "()Lnet/pnyxter/actor/dispatcher/ActorRef;");
+									super.visitFieldInsn(PUTFIELD, className, IN_ACTOR_PREFIX + "spawner", "Lnet/pnyxter/actor/dispatcher/ActorRef;");
+								}
+							}
+
+						};
+
+					}
 
 					return new MethodNode(ASM4, access, name, desc, signature, exceptionsArray) {
 						int line = 0;
@@ -372,12 +437,37 @@ public class ActorWeaver implements Opcodes {
 								enqueueMethod.visitLabel(l0);
 								enqueueMethod.visitLineNumber(line, l0);
 								enqueueMethod.visitVarInsn(ALOAD, 0);
-								enqueueMethod.visitFieldInsn(GETFIELD, caller.outerClassName, "queue", "Lnet/pnyxter/actor/dispatcher/ActorQueue;");
+								enqueueMethod.visitFieldInsn(GETFIELD, caller.outerClassName, IN_ACTOR_PREFIX + "queue", "Lnet/pnyxter/actor/dispatcher/ActorQueue;");
 								enqueueMethod.visitTypeInsn(NEW, caller.getFullClassName());
 								enqueueMethod.visitInsn(DUP);
 
-								for (int i = 0; i <= caller.parameterDesc.length; i++) {
-									enqueueMethod.visitVarInsn(ALOAD, i);
+								enqueueMethod.visitVarInsn(ALOAD, 0);
+								int i = 0;
+								for (String a : caller.parameterDesc) {
+									i++;
+
+									if (a.startsWith("L")) {
+										enqueueMethod.visitVarInsn(ALOAD, i);
+									} else {
+										switch (a) {
+										case "I":
+										case "B":
+										case "Z":
+											enqueueMethod.visitVarInsn(ILOAD, i);
+											break;
+										case "J":
+											enqueueMethod.visitVarInsn(LLOAD, i);
+											break;
+										case "F":
+											enqueueMethod.visitVarInsn(FLOAD, i);
+											break;
+										case "D":
+											enqueueMethod.visitVarInsn(DLOAD, i);
+											break;
+										default:
+											throw new ClassFormatError("Unsuported type on actor method (building action): " + a);
+										}
+									}
 								}
 
 								enqueueMethod.visitMethodInsn(INVOKESPECIAL, caller.getFullClassName(), "<init>", caller.constructorSignature);
@@ -386,7 +476,7 @@ public class ActorWeaver implements Opcodes {
 								Label l2 = new Label();
 								enqueueMethod.visitLabel(l2);
 								enqueueMethod.visitLocalVariable("this", "L" + caller.outerClassName + ";", null, l0, l2, 0);
-								int i = 0;
+								i = 0;
 								for (String pDesc : caller.parameterDesc) {
 									i++;
 									enqueueMethod.visitLocalVariable("a" + i, pDesc, null, l0, l2, 1);

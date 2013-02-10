@@ -4,6 +4,10 @@ import java.lang.reflect.Constructor;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
+import net.pnyxter.actor.system.ActorSystem;
+
+//TODO: Actions on non-instanciated actor?
+//TODO: Actions on actor in transfer?
 public class ActorQueue {
 
 	private final ThreadLocal<ActorThread> actorThreads = new ThreadLocal<ActorThread>() {
@@ -59,37 +63,8 @@ public class ActorQueue {
 
 	}
 
-	AtomicReference<QueuedInstantiation> lastInstantiation = new AtomicReference<>();
-	Action firstAction;
-
 	public void add(Action a) {
-
-	}
-
-	public void newInstance(Constructor<?> constructor, Object[] immutableParameters) {
-
-	}
-
-	public Instantiation stealInstatiation() {
-		return null;
-	}
-
-	/**
-	 * Blocking receive action posted on thread queue.
-	 * 
-	 * @return
-	 */
-	public static Action receive() {
-		return null;
-	}
-
-	/**
-	 * Receive action posted on thread queue.
-	 * 
-	 * @return {@code null} if no action is on queue.
-	 */
-	public static Action tryReceive() {
-		return null;
+		ActorSystem.add(a);
 	}
 
 }
