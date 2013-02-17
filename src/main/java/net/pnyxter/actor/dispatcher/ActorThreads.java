@@ -10,4 +10,8 @@ public class ActorThreads {
 		return threadActor.get();
 	}
 
+	public static void setCurrentActor(ActorRef actorRef) {
+		threadActor.set(actorRef);
+	}
+
 }

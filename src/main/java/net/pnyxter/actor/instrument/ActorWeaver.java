@@ -35,6 +35,8 @@ public class ActorWeaver implements Opcodes {
 
 	private static class CallerDescription extends SignatureVisitor {
 
+		final int classVersion;
+
 		final String outerClassName;
 
 		final String methodName;
@@ -53,8 +55,10 @@ public class ActorWeaver implements Opcodes {
 
 		String[] parameterDesc = new String[0];
 
-		public CallerDescription(String outerClassName, String name, String description, String signature, String source, int line) throws IllegalInboxMethodException {
+		public CallerDescription(int classVersion, String outerClassName, String name, String description, String signature, String source, int line) throws IllegalInboxMethodException {
 			super(ASM4);
+
+			this.classVersion = classVersion;
 
 			this.outerClassName = outerClassName;
 			this.source = source;
@@ -183,13 +187,13 @@ public class ActorWeaver implements Opcodes {
 		String innerClassName = caller.className;
 		String fullInnerClassName = caller.getFullClassName();
 
-		cw.visit(V1_7, ACC_FINAL + ACC_SUPER, fullInnerClassName, null, "net/pnyxter/actor/dispatcher/ActorQueue$Action", null);
+		cw.visit(caller.classVersion, ACC_FINAL + ACC_SUPER, fullInnerClassName, null, "java/lang/Object", new String[] { "net/pnyxter/actor/dispatcher/ActorQueue$Action" });
 
 		cw.visitSource(caller.source, null);
 
 		cw.visitInnerClass(fullInnerClassName, caller.outerClassName, innerClassName, ACC_PRIVATE + ACC_FINAL);
 
-		cw.visitInnerClass("net/pnyxter/actor/dispatcher/ActorQueue$Action", "net/pnyxter/actor/dispatcher/ActorQueue", "Action", ACC_PUBLIC + ACC_STATIC + ACC_ABSTRACT);
+		cw.visitInnerClass("net/pnyxter/actor/dispatcher/ActorQueue$Action", "net/pnyxter/actor/dispatcher/ActorQueue", "Action", ACC_PUBLIC + ACC_STATIC + ACC_ABSTRACT + ACC_INTERFACE);
 
 		StringBuilder params = new StringBuilder();
 		int i = 0;
@@ -306,8 +310,22 @@ public class ActorWeaver implements Opcodes {
 
 		ClassVisitor cv = new ClassVisitor(ASM4, cw) {
 			boolean fieldsAdded = false;
-
 			String source = null;
+			int classVersion;
+
+			@Override
+			public void visit(int version, int access, String name, String signature, String superName, String[] interfaces) {
+				classVersion = version;
+
+				if (interfaces == null) {
+					interfaces = new String[1];
+				} else {
+					interfaces = Arrays.copyOf(interfaces, interfaces.length + 1);
+				}
+				interfaces[interfaces.length - 1] = "net/pnyxter/actor/dispatcher/ActorRef";
+
+				super.visit(version, access, name, signature, superName, interfaces);
+			}
 
 			@Override
 			public AnnotationVisitor visitAnnotation(String desc, boolean visible) {
@@ -328,14 +346,54 @@ public class ActorWeaver implements Opcodes {
 				super.visitSource(source, debug);
 			}
 
-			private void addActorFields() {
+			private void addActorExtensions() {
 				if (!fieldsAdded) {
 					fieldsAdded = true;
 
-					System.out.println("Fields added to actor: " + className);
+					System.out.println("Fields and methods added to actor: " + className);
 
 					super.visitField(ACC_PRIVATE + ACC_FINAL + ACC_TRANSIENT, IN_ACTOR_PREFIX + "queue", "Lnet/pnyxter/actor/dispatcher/ActorQueue;", null, null).visitEnd();
 					super.visitField(ACC_PRIVATE + ACC_FINAL + ACC_TRANSIENT, IN_ACTOR_PREFIX + "spawner", "Lnet/pnyxter/actor/dispatcher/ActorRef;", null, null).visitEnd();
+					super.visitField(ACC_PRIVATE + ACC_TRANSIENT, IN_ACTOR_PREFIX + "assigned_thread", "Ljava/lang/Thread;", null, null).visitEnd();
+
+					{
+						MethodVisitor mv = super.visitMethod(ACC_PUBLIC + ACC_FINAL, "getAssignedThread", "()Ljava/lang/Thread;", null, null);
+						mv.visitCode();
+						Label l0 = new Label();
+						mv.visitLabel(l0);
+						mv.visitVarInsn(ALOAD, 0);
+						mv.visitFieldInsn(GETFIELD, className, IN_ACTOR_PREFIX + "assigned_thread", "Ljava/lang/Thread;");
+						mv.visitInsn(ARETURN);
+						Label l1 = new Label();
+						mv.visitLabel(l1);
+						mv.visitLocalVariable("this", "L" + className + ";", null, l0, l1, 0);
+						mv.visitMaxs(0, 0); // COMPUTE_MAXS
+						mv.visitEnd();
+					}
+					{
+						MethodVisitor mv = super.visitMethod(ACC_PUBLIC, "setAssignedThread", "(Ljava/lang/Thread;)V", null, null);
+						mv.visitCode();
+						Label l0 = new Label();
+						mv.visitLabel(l0);
+						mv.visitVarInsn(ALOAD, 0);
+						mv.visitFieldInsn(GETFIELD, className, IN_ACTOR_PREFIX + "assigned_thread", "Ljava/lang/Thread;");
+						Label l1 = new Label();
+						mv.visitJumpInsn(IFNONNULL, l1);
+						Label l2 = new Label();
+						mv.visitLabel(l2);
+						mv.visitVarInsn(ALOAD, 0);
+						mv.visitVarInsn(ALOAD, 1);
+						mv.visitFieldInsn(PUTFIELD, className, IN_ACTOR_PREFIX + "assigned_thread", "Ljava/lang/Thread;");
+						mv.visitLabel(l1);
+						mv.visitFrame(Opcodes.F_SAME, 0, null, 0, null);
+						mv.visitInsn(RETURN);
+						Label l3 = new Label();
+						mv.visitLabel(l3);
+						mv.visitLocalVariable("this", "L" + className + ";", null, l0, l3, 0);
+						mv.visitLocalVariable("thread", "Ljava/lang/Thread;", null, l0, l3, 1);
+						mv.visitMaxs(0, 0); // COMPUTE_MAXS
+						mv.visitEnd();
+					}
 				}
 			}
 
@@ -345,7 +403,7 @@ public class ActorWeaver implements Opcodes {
 
 				if (actor.get()) {
 
-					addActorFields();
+					addActorExtensions();
 
 					if ("<init>".equals(name)) {
 						return new MethodVisitor(ASM4, super.visitMethod(access, name, desc, signature, exceptionsArray)) {
@@ -427,7 +485,7 @@ public class ActorWeaver implements Opcodes {
 							} else {
 								System.out.println("Create inbox method: " + className + "#" + name);
 
-								CallerDescription caller = new CallerDescription(className, name, desc, signature, source, line);
+								CallerDescription caller = new CallerDescription(classVersion, className, name, desc, signature, source, line);
 
 								actorLoader.defineClass(Type.getObjectType(caller.getFullClassName()).getClassName(), createInboxCallAction(caller));
 
@@ -482,7 +540,7 @@ public class ActorWeaver implements Opcodes {
 									enqueueMethod.visitLocalVariable("a" + i, pDesc, null, l0, l2, 1);
 								}
 
-								enqueueMethod.visitMaxs(0, 0);
+								enqueueMethod.visitMaxs(0, 0); // COMPUTE_MAXS
 								enqueueMethod.visitEnd();
 
 								access = 0;
@@ -501,9 +559,6 @@ public class ActorWeaver implements Opcodes {
 		};
 
 		cr.accept(cv, 0);
-
-		// CheckClassAdapter.verify(new ClassReader(cw.toByteArray()), false,
-		// new PrintWriter(System.out));
 
 		if (actor.get()) {
 			new ClassReader(cw.toByteArray()).accept(new TraceClassVisitor(new PrintWriter(System.out)), 0);

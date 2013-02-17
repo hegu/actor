@@ -1,5 +1,7 @@
 package net.pnyxter.actor.dispatcher;
 
-public class ActorRef {
+public interface ActorRef {
+	Thread getAssignedThread();
 
+	void setAssignedThread(Thread thread);
 }
