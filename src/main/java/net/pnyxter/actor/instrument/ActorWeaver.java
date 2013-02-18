@@ -219,7 +219,7 @@ public class ActorWeaver implements Opcodes {
 			mv.visitVarInsn(ALOAD, 1);
 			mv.visitFieldInsn(PUTFIELD, fullInnerClassName, "this$0", "L" + caller.outerClassName + ";");
 			mv.visitVarInsn(ALOAD, 0);
-			mv.visitMethodInsn(INVOKESPECIAL, "net/pnyxter/actor/dispatcher/ActorQueue$Action", "<init>", "()V");
+			mv.visitMethodInsn(INVOKESPECIAL, "java/lang/Object", "<init>", "()V");
 
 			i = 0;
 			for (String a : caller.parameterDesc) {
@@ -292,6 +292,22 @@ public class ActorWeaver implements Opcodes {
 			mv.visitMaxs(0, 0); // COMPUTE_MAXS
 			mv.visitEnd();
 		}
+		{
+			mv = cw.visitMethod(ACC_PUBLIC, "getActorRef", "()Lnet/pnyxter/actor/dispatcher/ActorRef;", null, null);
+			mv.visitCode();
+			Label l0 = new Label();
+			mv.visitLabel(l0);
+			mv.visitLineNumber(caller.line, l0);
+			mv.visitVarInsn(ALOAD, 0);
+			mv.visitFieldInsn(GETFIELD, fullInnerClassName, "this$0", "L" + caller.outerClassName + ";");
+			mv.visitInsn(ARETURN);
+			Label l1 = new Label();
+			mv.visitLabel(l1);
+			mv.visitLocalVariable("this", "L" + fullInnerClassName + ";", null, l0, l1, 0);
+			mv.visitMaxs(0, 0); // COMPUTE_MAXS
+			mv.visitEnd();
+		}
+
 		cw.visitEnd();
 
 		new ClassReader(cw.toByteArray()).accept(new TraceClassVisitor(new PrintWriter(System.out)), 0);

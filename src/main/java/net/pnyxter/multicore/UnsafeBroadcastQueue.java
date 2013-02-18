@@ -84,7 +84,38 @@ public class UnsafeBroadcastQueue<M> implements BroadcastQueue<M> {
 				cursor = valueNode;
 				return valueNode.get();
 			}
+
+			@Override
+			public String toString() {
+				StringBuilder buffer = new StringBuilder();
+				buffer.append("[");
+
+				boolean first = true;
+				Node<M> c = cursor;
+				list_loop: while (c != null) {
+					if (!first) {
+						buffer.append(',');
+					} else {
+						first = false;
+					}
+
+					c = (Node<M>) unsafe.getObject(c, Node.nextOffset);
+
+					if (c != null) {
+						buffer.append(c.message);
+					} else {
+						break list_loop;
+					}
+				}
+
+				buffer.append("]");
+				return buffer.toString();
+			}
 		};
 	}
 
+	@Override
+	public String toString() {
+		return "BroadcastQueue";
+	}
 }

@@ -19,4 +19,8 @@ public class Announcement {
 		return thread;
 	}
 
+	@Override
+	public String toString() {
+		return "(A#" + actor.hashCode() + "->" + thread.getName() + ")";
+	}
 }

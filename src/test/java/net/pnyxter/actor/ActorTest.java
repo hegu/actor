@@ -58,7 +58,7 @@ public class ActorTest {
 	}
 
 	@Test
-	public void testCallToActor() {
+	public void testCallToActor() throws InterruptedException {
 
 		final long start = System.nanoTime();
 
