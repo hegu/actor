@@ -20,8 +20,9 @@ public class SynchronizedBroadcastQueue<M> implements BroadcastQueue<M> {
 	private Node<M> head = new Node<>(null);
 
 	@Override
-	public synchronized void add(M message) {
+	public synchronized boolean add(M message) {
 		head = head.next = new Node<>(message);
+		return true;
 	}
 
 	@Override

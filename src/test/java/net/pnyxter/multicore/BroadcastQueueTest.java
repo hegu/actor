@@ -2,7 +2,7 @@ package net.pnyxter.multicore;
 
 import java.util.concurrent.CountDownLatch;
 
-import net.pnyxter.multicore.BroadcastQueue.Follower;
+import net.pnyxter.multicore.MulticoreQueue.Follower;
 
 import org.junit.Assert;
 import org.junit.Test;
@@ -90,7 +90,7 @@ public class BroadcastQueueTest {
 							}
 						} else {
 							try {
-								Thread.sleep(5L);
+								Thread.sleep(0L, 1);
 							} catch (InterruptedException e) {
 								return;
 							}

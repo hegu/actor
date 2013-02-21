@@ -7,7 +7,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.ConcurrentLinkedDeque;
 import java.util.concurrent.CopyOnWriteArraySet;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.atomic.AtomicLong;
@@ -15,6 +15,8 @@ import java.util.concurrent.atomic.AtomicLong;
 import net.pnyxter.actor.dispatcher.ActorQueue.Action;
 import net.pnyxter.actor.dispatcher.ActorRef;
 import net.pnyxter.multicore.BroadcastQueue;
+import net.pnyxter.multicore.JdkSimpleQueue;
+import net.pnyxter.multicore.SimpleQueue;
 import net.pnyxter.multicore.UnsafeBroadcastQueue;
 
 public class ActorSystem implements AutoCloseable {
@@ -85,6 +87,7 @@ public class ActorSystem implements AutoCloseable {
 	}
 
 	private static class ActorThreadContext {
+		ConcurrentLinkedDeque<ActorRef> instantiations = new ConcurrentLinkedDeque<>();
 		Map<ActorRef, Collection<Action>> actorQueuedActions = new HashMap<>();
 		BlockingQueue<Action> actions = new LinkedBlockingQueue<>();
 		BroadcastQueue.Follower<Announcement> assignmentAnnouncementsFollower = assignmentAnnouncements.follower();
@@ -104,6 +107,10 @@ public class ActorSystem implements AutoCloseable {
 					buffer.append("\t\t#").append(a.hashCode()).append("\n");
 				}
 			}
+			buffer.append("I: \n");
+			for (ActorRef a : instantiations) {
+				buffer.append("\tA#").append(a.hashCode()).append("\n");
+			}
 			buffer.append("Ann: \n\t").append(assignmentAnnouncementsFollower);
 
 			return buffer.toString();
@@ -111,7 +118,7 @@ public class ActorSystem implements AutoCloseable {
 	}
 
 	private static final ConcurrentHashMap<Thread, ActorThreadContext> threadContexts = new ConcurrentHashMap<>();
-	private static final ConcurrentLinkedQueue<Thread> idleQueue = new ConcurrentLinkedQueue<>();
+	private static final SimpleQueue<Thread> idleQueue = new JdkSimpleQueue<>();
 
 	private static final BroadcastQueue<Announcement> assignmentAnnouncements = new UnsafeBroadcastQueue<>();
 
@@ -292,5 +299,9 @@ public class ActorSystem implements AutoCloseable {
 				Thread.interrupted();
 			}
 		}
+	}
+
+	public static void register(ActorRef actor) {
+		getThreadContext().instantiations.addFirst(actor);
 	}
 }

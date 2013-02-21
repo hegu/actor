@@ -54,7 +54,7 @@ public class UnsafeBroadcastQueue<M> implements BroadcastQueue<M> {
 	private Node<M> head = new Node<>(null);
 
 	@Override
-	public void add(M message) {
+	public boolean add(M message) {
 		Node<M> added = new Node<>(message);
 
 		Node<M> cursor = head;
@@ -62,7 +62,7 @@ public class UnsafeBroadcastQueue<M> implements BroadcastQueue<M> {
 		for (;;) {
 			if (unsafe.compareAndSwapObject(cursor, Node.nextOffset, null, added)) {
 				head = added;
-				return;
+				return true;
 			}
 			cursor = (Node<M>) unsafe.getObject(cursor, Node.nextOffset);
 		}

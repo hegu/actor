@@ -320,8 +320,6 @@ public class ActorWeaver implements Opcodes {
 		ClassReader cr = new ClassReader(b);
 		ClassWriter cw = new ClassWriter(cr, ClassWriter.COMPUTE_MAXS | ClassWriter.COMPUTE_FRAMES);
 
-		System.out.println("Reading: " + className);
-
 		final AtomicBoolean actor = new AtomicBoolean(false);
 
 		ClassVisitor cv = new ClassVisitor(ASM4, cw) {
@@ -371,7 +369,25 @@ public class ActorWeaver implements Opcodes {
 					super.visitField(ACC_PRIVATE + ACC_FINAL + ACC_TRANSIENT, IN_ACTOR_PREFIX + "queue", "Lnet/pnyxter/actor/dispatcher/ActorQueue;", null, null).visitEnd();
 					super.visitField(ACC_PRIVATE + ACC_FINAL + ACC_TRANSIENT, IN_ACTOR_PREFIX + "spawner", "Lnet/pnyxter/actor/dispatcher/ActorRef;", null, null).visitEnd();
 					super.visitField(ACC_PRIVATE + ACC_TRANSIENT, IN_ACTOR_PREFIX + "assigned_thread", "Ljava/lang/Thread;", null, null).visitEnd();
+					super.visitField(ACC_PRIVATE + ACC_FINAL + ACC_STATIC, IN_ACTOR_PREFIX + "assigned_thread_offset", "J", null, null).visitEnd();
 
+					{
+						MethodVisitor mv = super.visitMethod(ACC_STATIC, "<clinit>", "()V", null, null);
+						mv.visitCode();
+						Label l0 = new Label();
+						mv.visitLabel(l0);
+						mv.visitLineNumber(22, l0);
+						mv.visitLdcInsn(Type.getType("L" + className + ";"));
+						mv.visitLdcInsn(IN_ACTOR_PREFIX + "assigned_thread");
+						mv.visitMethodInsn(INVOKESTATIC, "net/pnyxter/multicore/cas/Methods", "objectFieldOffset", "(Ljava/lang/Class;Ljava/lang/String;)J");
+						mv.visitFieldInsn(PUTSTATIC, className, IN_ACTOR_PREFIX + "assigned_thread_offset", "J");
+						Label l1 = new Label();
+						mv.visitLabel(l1);
+						mv.visitLineNumber(23, l1);
+						mv.visitInsn(RETURN);
+						mv.visitMaxs(0, 0); // COMPUTE_MAXS
+						mv.visitEnd();
+					}
 					{
 						MethodVisitor mv = super.visitMethod(ACC_PUBLIC + ACC_FINAL, "getAssignedThread", "()Ljava/lang/Thread;", null, null);
 						mv.visitCode();
@@ -387,26 +403,20 @@ public class ActorWeaver implements Opcodes {
 						mv.visitEnd();
 					}
 					{
-						MethodVisitor mv = super.visitMethod(ACC_PUBLIC, "setAssignedThread", "(Ljava/lang/Thread;)V", null, null);
+						MethodVisitor mv = super.visitMethod(ACC_PUBLIC, "setAssignedThread", "(Ljava/lang/Thread;)Z", null, null);
 						mv.visitCode();
 						Label l0 = new Label();
 						mv.visitLabel(l0);
 						mv.visitVarInsn(ALOAD, 0);
-						mv.visitFieldInsn(GETFIELD, className, IN_ACTOR_PREFIX + "assigned_thread", "Ljava/lang/Thread;");
-						Label l1 = new Label();
-						mv.visitJumpInsn(IFNONNULL, l1);
-						Label l2 = new Label();
-						mv.visitLabel(l2);
-						mv.visitVarInsn(ALOAD, 0);
+						mv.visitFieldInsn(GETSTATIC, "net/pnyxter/actor/Logger", IN_ACTOR_PREFIX + "assigned_thread_offset", "J");
+						mv.visitInsn(ACONST_NULL);
 						mv.visitVarInsn(ALOAD, 1);
-						mv.visitFieldInsn(PUTFIELD, className, IN_ACTOR_PREFIX + "assigned_thread", "Ljava/lang/Thread;");
+						mv.visitMethodInsn(INVOKESTATIC, "net/pnyxter/multicore/cas/Methods", "compareAndSwap", "(Ljava/lang/Object;JLjava/lang/Object;Ljava/lang/Object;)Z");
+						mv.visitInsn(IRETURN);
+						Label l1 = new Label();
 						mv.visitLabel(l1);
-						mv.visitFrame(Opcodes.F_SAME, 0, null, 0, null);
-						mv.visitInsn(RETURN);
-						Label l3 = new Label();
-						mv.visitLabel(l3);
-						mv.visitLocalVariable("this", "L" + className + ";", null, l0, l3, 0);
-						mv.visitLocalVariable("thread", "Ljava/lang/Thread;", null, l0, l3, 1);
+						mv.visitLocalVariable("this", "L" + className + ";", null, l0, l1, 0);
+						mv.visitLocalVariable("thread", "Ljava/lang/Thread;", null, l0, l1, 1);
 						mv.visitMaxs(0, 0); // COMPUTE_MAXS
 						mv.visitEnd();
 					}
@@ -447,7 +457,8 @@ public class ActorWeaver implements Opcodes {
 									super.visitVarInsn(ALOAD, 0);
 									super.visitTypeInsn(NEW, "net/pnyxter/actor/dispatcher/ActorQueue");
 									super.visitInsn(DUP);
-									super.visitMethodInsn(INVOKESPECIAL, "net/pnyxter/actor/dispatcher/ActorQueue", "<init>", "()V");
+									super.visitVarInsn(ALOAD, 0);
+									super.visitMethodInsn(INVOKESPECIAL, "net/pnyxter/actor/dispatcher/ActorQueue", "<init>", "(Lnet/pnyxter/actor/dispatcher/ActorRef;)V");
 									super.visitFieldInsn(PUTFIELD, className, IN_ACTOR_PREFIX + "queue", "Lnet/pnyxter/actor/dispatcher/ActorQueue;");
 
 									Label l2 = new Label();

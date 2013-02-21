@@ -22,7 +22,7 @@ public class VolatileBroadcastQueue<M> implements BroadcastQueue<M> {
 	private volatile Node<M> head = new Node<>(null);
 
 	@Override
-	public void add(M message) {
+	public boolean add(M message) {
 		Node<M> added = new Node<>(message);
 
 		Node<M> cursor = head;
@@ -30,7 +30,7 @@ public class VolatileBroadcastQueue<M> implements BroadcastQueue<M> {
 		for (;;) {
 			if (cursor.next.compareAndSet(null, added)) {
 				head = added;
-				return;
+				return true;
 			}
 			cursor = cursor.next.get();
 		}

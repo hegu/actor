@@ -7,6 +7,7 @@ import net.pnyxter.actor.dispatcher.ActorRef;
 import net.pnyxter.actor.dispatcher.ActorThreads;
 import net.pnyxter.actor.system.ActorSystem;
 import net.pnyxter.immutalizer.Immutalizer;
+import net.pnyxter.multicore.cas.Methods;
 
 @Actor
 public class Logger implements ActorRef {
@@ -15,6 +16,11 @@ public class Logger implements ActorRef {
 	private transient final ActorQueue __in__actor__queue;
 	private transient final ActorRef __in__actor__spawnwer;
 	private transient Thread __in__actor__assigned_thread;
+
+	private static final long __in__actor__assigned_thread_offset;
+	static {
+		__in__actor__assigned_thread_offset = Methods.objectFieldOffset(Logger.class, "__in__actor__assigned_thread");
+	}
 
 	private final class Caller_logString implements ActorQueue.Action {
 
@@ -38,7 +44,7 @@ public class Logger implements ActorRef {
 	}
 
 	public Logger() {
-		__in__actor__queue = new ActorQueue();
+		__in__actor__queue = new ActorQueue(this);
 		__in__actor__spawnwer = ActorThreads.getCurrentActor();
 	}
 
@@ -62,9 +68,7 @@ public class Logger implements ActorRef {
 	}
 
 	@Override
-	public void setAssignedThread(Thread thread) {
-		if (__in__actor__assigned_thread == null) {
-			__in__actor__assigned_thread = thread;
-		}
+	public boolean setAssignedThread(Thread thread) {
+		return Methods.compareAndSwap(this, __in__actor__assigned_thread_offset, null, thread);
 	}
 }

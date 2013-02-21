@@ -12,6 +12,10 @@ public class ActorQueue {
 		void execute();
 	}
 
+	public ActorQueue(ActorRef actor) {
+		ActorSystem.register(actor);
+	}
+
 	public void add(Action a) {
 		ActorSystem.add(a);
 	}
