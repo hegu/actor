@@ -87,32 +87,55 @@ public class ActorSystem implements AutoCloseable {
 	}
 
 	private static class ActorThreadContext {
-		ConcurrentLinkedDeque<ActorRef> instantiations = new ConcurrentLinkedDeque<>();
-		Map<ActorRef, Collection<Action>> actorQueuedActions = new HashMap<>();
-		BlockingQueue<Action> actions = new LinkedBlockingQueue<>();
-		BroadcastQueue.Follower<Announcement> assignmentAnnouncementsFollower = assignmentAnnouncements.follower();
+		final Thread thread;
+		final ConcurrentLinkedDeque<ActorRef> instantiations = new ConcurrentLinkedDeque<>();
+		final Map<ActorRef, Collection<Action>> actorQueuedActions = new HashMap<>();
+		final BlockingQueue<Action> actions = new LinkedBlockingQueue<>();
+		final BroadcastQueue.Follower<Announcement> assignmentAnnouncementsFollower = assignmentAnnouncements.follower();
+
+		int instantiationsCount = 0;
+		int assignmentCount = 0;
+		int actionCount = 0;
+
+		public ActorThreadContext(Thread thread) {
+			this.thread = thread;
+		}
 
 		@Override
 		public String toString() {
 			StringBuilder buffer = new StringBuilder();
 
-			buffer.append("ThQ: \n");
-			for (Action a : actions) {
-				buffer.append("\t#").append(a.hashCode()).append("\n");
-			}
-			buffer.append("AgQ: \n");
-			for (Map.Entry<ActorRef, Collection<Action>> e : actorQueuedActions.entrySet()) {
-				buffer.append("\tA#").append(e.getKey().hashCode()).append("\n");
-				for (Action a : e.getValue()) {
-					buffer.append("\t\t#").append(a.hashCode()).append("\n");
+			buffer.append(thread.getName()).append(": ");
+			buffer.append(" instantiations:").append(instantiationsCount);
+			buffer.append(" assignments:").append(instantiationsCount);
+			buffer.append(" actions:").append(instantiationsCount);
+			buffer.append("\n");
+
+			if (!actions.isEmpty()) {
+				buffer.append("ThQ: \n");
+				for (Action a : actions) {
+					buffer.append("\t#").append(a.hashCode()).append("\n");
 				}
 			}
-			buffer.append("I: \n");
-			for (ActorRef a : instantiations) {
-				buffer.append("\tA#").append(a.hashCode()).append("\n");
+			if (!actorQueuedActions.isEmpty()) {
+				buffer.append("AgQ: \n");
+				for (Map.Entry<ActorRef, Collection<Action>> e : actorQueuedActions.entrySet()) {
+					buffer.append("\tA#").append(e.getKey().hashCode()).append("\n");
+					for (Action a : e.getValue()) {
+						buffer.append("\t\t#").append(a.hashCode()).append("\n");
+					}
+				}
 			}
-			buffer.append("Ann: \n\t").append(assignmentAnnouncementsFollower);
-
+			if (!instantiations.isEmpty()) {
+				buffer.append("I: \n");
+				for (ActorRef a : instantiations) {
+					buffer.append("\tA#").append(a.hashCode()).append("\n");
+				}
+			}
+			String eventQueue = assignmentAnnouncementsFollower.toString();
+			if (!"[]".equals(eventQueue)) {
+				buffer.append("Ann: \n\t").append(eventQueue).append("\n");
+			}
 			return buffer.toString();
 		}
 	}
@@ -123,7 +146,7 @@ public class ActorSystem implements AutoCloseable {
 	private static final BroadcastQueue<Announcement> assignmentAnnouncements = new UnsafeBroadcastQueue<>();
 
 	public static void start(int threads) {
-		for (int i = 0; 0 < threads; i++) {
+		for (int i = 0; i < threads; i++) {
 			new ActorThread("ActorThread-" + (1 + i)).start();
 		}
 	}
@@ -132,7 +155,7 @@ public class ActorSystem implements AutoCloseable {
 		Thread thread = Thread.currentThread();
 		ActorThreadContext context = threadContexts.get(thread);
 		if (context == null) {
-			threadContexts.put(thread, context = new ActorThreadContext());
+			threadContexts.put(thread, context = new ActorThreadContext(thread));
 		}
 		return context;
 	}
@@ -205,7 +228,13 @@ public class ActorSystem implements AutoCloseable {
 				ActorRef announcedActor = announcement.getActor();
 				Thread announcedThread = announcement.getThread();
 
-				announcedActor.setAssignedThread(announcedThread);
+				System.out.println("Received announcment[" + context.thread.getName() + "] A#" + announcedActor.hashCode() + " -> " + announcedThread.getName());
+
+				if (context.thread == announcedThread) {
+					context.assignmentCount++;
+				}
+
+				announcedActor.updateAssignedThread(announcedThread);
 
 				Collection<Action> queuedActions = context.actorQueuedActions.remove(announcedActor);
 				if (queuedActions != null) {
@@ -220,6 +249,50 @@ public class ActorSystem implements AutoCloseable {
 				}
 			} else {
 				return null;
+			}
+		}
+	}
+
+	private static void assignLocalActor(ActorThreadContext context) {
+		for (;;) {
+			ActorRef actor = context.instantiations.pollFirst();
+			if (actor == null) {
+				return;
+			}
+			// XXX: Current design is only assigning from local thread
+			if (actor.setAssignedThread(Thread.currentThread())) {
+				// Local assignment should not trigger announcement
+
+				context.assignmentCount++;
+
+				Collection<Action> queuedActions = context.actorQueuedActions.remove(actor);
+				if (queuedActions != null) {
+					for (Action queued : queuedActions) {
+						context.actions.add(queued);
+					}
+				}
+
+				return;
+			}
+		}
+	}
+
+	private static void assignActorsToIdleThreads(ActorThreadContext context) {
+		while (!context.instantiations.isEmpty()) {
+			Thread idleThread = idleQueue.follower().poll();
+			if (idleThread == null) {
+				return;
+			}
+			ActorRef a = context.instantiations.pollLast();
+			if (a == null) {
+				return;
+			}
+			if (!a.setAssignedThread(idleThread)) {
+				// No assignment happened - return thread to idle pool
+				idleQueue.add(idleThread);
+			} else {
+				assignmentAnnouncements.add(new Announcement(a, idleThread));
+				System.out.println("Assigned to idle: A#" + a.hashCode() + " -> " + idleThread.getName());
 			}
 		}
 	}
@@ -257,23 +330,37 @@ public class ActorSystem implements AutoCloseable {
 	}
 
 	private static ProcessStatus process(ActorThreadContext context, boolean block) throws InterruptedException {
-		processAnnouncement(context, null);
+		boolean announcedAsIdle = false;
+		wait_loop: for (;;) {
+			processAnnouncement(context, null);
 
-		Action a;
-		if (block) {
-			a = context.actions.take();
-		} else {
-			a = context.actions.poll();
+			if (context.actions.isEmpty()) {
+				assignLocalActor(context);
+			}
+
+			assignActorsToIdleThreads(context);
+
+			Action a = context.actions.poll();
+			if (a == null) {
+				if (block) {
+					if (!announcedAsIdle) {
+						announcedAsIdle = true;
+						System.out.println("IDLE " + context.thread.getName());
+						idleQueue.add(context.thread);
+					}
+					Thread.sleep(50);
+					continue wait_loop;
+				}
+				return ProcessStatus.EMPTY;
+			}
+			announcedAsIdle = false;
+
+			System.out.println("RUN #" + a.hashCode());
+			context.actionCount++;
+			a.execute();
+
+			return ProcessStatus.PROCESSED;
 		}
-
-		if (a == null) {
-			return ProcessStatus.EMPTY;
-		}
-
-		System.out.println("RUN #" + a.hashCode());
-		a.execute();
-
-		return ProcessStatus.PROCESSED;
 	}
 
 	@Override
@@ -302,6 +389,13 @@ public class ActorSystem implements AutoCloseable {
 	}
 
 	public static void register(ActorRef actor) {
+		getThreadContext().instantiationsCount++;
 		getThreadContext().instantiations.addFirst(actor);
+	}
+
+	public static void statistics() {
+		for (ActorThreadContext c : threadContexts.values()) {
+			System.out.println(c);
+		}
 	}
 }

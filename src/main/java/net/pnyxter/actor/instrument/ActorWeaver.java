@@ -408,7 +408,7 @@ public class ActorWeaver implements Opcodes {
 						Label l0 = new Label();
 						mv.visitLabel(l0);
 						mv.visitVarInsn(ALOAD, 0);
-						mv.visitFieldInsn(GETSTATIC, "net/pnyxter/actor/Logger", IN_ACTOR_PREFIX + "assigned_thread_offset", "J");
+						mv.visitFieldInsn(GETSTATIC, className, IN_ACTOR_PREFIX + "assigned_thread_offset", "J");
 						mv.visitInsn(ACONST_NULL);
 						mv.visitVarInsn(ALOAD, 1);
 						mv.visitMethodInsn(INVOKESTATIC, "net/pnyxter/multicore/cas/Methods", "compareAndSwap", "(Ljava/lang/Object;JLjava/lang/Object;Ljava/lang/Object;)Z");
@@ -417,6 +417,30 @@ public class ActorWeaver implements Opcodes {
 						mv.visitLabel(l1);
 						mv.visitLocalVariable("this", "L" + className + ";", null, l0, l1, 0);
 						mv.visitLocalVariable("thread", "Ljava/lang/Thread;", null, l0, l1, 1);
+						mv.visitMaxs(0, 0); // COMPUTE_MAXS
+						mv.visitEnd();
+					}
+					{
+						MethodVisitor mv = this.visitMethod(ACC_PUBLIC, "updateAssignedThread", "(Ljava/lang/Thread;)V", null, null);
+						mv.visitCode();
+						Label l0 = new Label();
+						mv.visitLabel(l0);
+						mv.visitVarInsn(ALOAD, 0);
+						mv.visitFieldInsn(GETFIELD, className, IN_ACTOR_PREFIX + "assigned_thread", "Ljava/lang/Thread;");
+						Label l1 = new Label();
+						mv.visitJumpInsn(IFNONNULL, l1);
+						Label l2 = new Label();
+						mv.visitLabel(l2);
+						mv.visitVarInsn(ALOAD, 0);
+						mv.visitVarInsn(ALOAD, 1);
+						mv.visitFieldInsn(PUTFIELD, className, IN_ACTOR_PREFIX + "assigned_thread", "Ljava/lang/Thread;");
+						mv.visitLabel(l1);
+						mv.visitFrame(Opcodes.F_SAME, 0, null, 0, null);
+						mv.visitInsn(RETURN);
+						Label l3 = new Label();
+						mv.visitLabel(l3);
+						mv.visitLocalVariable("this", "L" + className + ";", null, l0, l3, 0);
+						mv.visitLocalVariable("thread", "Ljava/lang/Thread;", null, l0, l3, 1);
 						mv.visitMaxs(0, 0); // COMPUTE_MAXS
 						mv.visitEnd();
 					}

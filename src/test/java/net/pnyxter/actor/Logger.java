@@ -71,4 +71,11 @@ public class Logger implements ActorRef {
 	public boolean setAssignedThread(Thread thread) {
 		return Methods.compareAndSwap(this, __in__actor__assigned_thread_offset, null, thread);
 	}
+
+	@Override
+	public void updateAssignedThread(Thread thread) {
+		if (__in__actor__assigned_thread == null) {
+			__in__actor__assigned_thread = thread;
+		}
+	}
 }

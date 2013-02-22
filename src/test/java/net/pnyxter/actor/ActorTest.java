@@ -1,6 +1,7 @@
 package net.pnyxter.actor;
 
 import java.security.SecureRandom;
+import java.util.concurrent.CountDownLatch;
 
 import net.pnyxter.actor.system.ActorSystem;
 import net.pnyxter.actor.system.ActorSystem.ProcessType;
@@ -60,18 +61,25 @@ public class ActorTest {
 	@Test
 	public void testCallToActor() throws InterruptedException {
 
+		final CountDownLatch resultComplete = new CountDownLatch(1);
+
 		final long start = System.nanoTime();
 
-		// ActorSystem.start(10);
+		ActorSystem.start(10);
 
 		new RandomSum(3, 3, new Sum() {
 			@Override
 			public void sum(long sum) {
-				System.out.println("Sum: " + sum + " after " + (System.nanoTime() - start) + "ns");
+				System.out.println("Sum: " + sum + " after " + (System.nanoTime() - start) / 1000000 + "ms");
+				resultComplete.countDown();
 			}
 		}).process();
 
 		ActorSystem.process(ProcessType.UNTIL_NO_WORK);
+
+		resultComplete.await();
+
+		ActorSystem.statistics();
 	}
 
 }
