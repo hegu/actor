@@ -65,8 +65,6 @@ public class ActorTest {
 
 		final long start = System.nanoTime();
 
-		ActorSystem.start(10);
-
 		new RandomSum(3, 3, new Sum() {
 			@Override
 			public void sum(long sum) {
@@ -75,6 +73,7 @@ public class ActorTest {
 			}
 		}).process();
 
+		ActorSystem.start(10);
 		ActorSystem.process(ProcessType.UNTIL_NO_WORK);
 
 		resultComplete.await();

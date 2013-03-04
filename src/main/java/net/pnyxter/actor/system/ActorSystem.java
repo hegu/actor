@@ -2,6 +2,7 @@ package net.pnyxter.actor.system;
 
 import java.util.Collection;
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.Map;
 import java.util.Set;
@@ -140,7 +141,23 @@ public class ActorSystem implements AutoCloseable {
 		}
 	}
 
-	private static final ConcurrentHashMap<Thread, ActorThreadContext> threadContexts = new ConcurrentHashMap<>();
+	public static final ConcurrentHashMap<Thread, ActorThreadContext> threadContexts = new ConcurrentHashMap<Thread, ActorThreadContext>() {
+		private static final long serialVersionUID = 1L;
+
+		@Override
+		public String toString() {
+			StringBuilder buffer = new StringBuilder();
+
+			for (Iterator<ActorThreadContext> i = values().iterator(); i.hasNext();) {
+				buffer.append(i.next());
+				if (i.hasNext()) {
+					buffer.append('\n');
+				}
+			}
+
+			return buffer.toString();
+		}
+	};
 	private static final SimpleQueue<Thread> idleQueue = new JdkSimpleQueue<>();
 
 	private static final BroadcastQueue<Announcement> assignmentAnnouncements = new UnsafeBroadcastQueue<>();
@@ -189,7 +206,7 @@ public class ActorSystem implements AutoCloseable {
 	public static void add(Action a) {
 		ActorThreadContext context = getThreadContext();
 
-		System.out.println("ADD #" + a.hashCode());
+		// System.out.println("ADD #" + a.hashCode());
 
 		Thread destinationThread = a.getActorRef().getAssignedThread();
 
@@ -228,7 +245,9 @@ public class ActorSystem implements AutoCloseable {
 				ActorRef announcedActor = announcement.getActor();
 				Thread announcedThread = announcement.getThread();
 
-				System.out.println("Received announcment[" + context.thread.getName() + "] A#" + announcedActor.hashCode() + " -> " + announcedThread.getName());
+				// System.out.println("Received announcment[" +
+				// context.thread.getName() + "] A#" + announcedActor.hashCode()
+				// + " -> " + announcedThread.getName());
 
 				if (context.thread == announcedThread) {
 					context.assignmentCount++;
@@ -277,24 +296,26 @@ public class ActorSystem implements AutoCloseable {
 		}
 	}
 
-	private static void assignActorsToIdleThreads(ActorThreadContext context) {
+	private static boolean assignActorsToIdleThreads(ActorThreadContext context) {
 		while (!context.instantiations.isEmpty()) {
 			Thread idleThread = idleQueue.follower().poll();
 			if (idleThread == null) {
-				return;
+				return true;
 			}
 			ActorRef a = context.instantiations.pollLast();
 			if (a == null) {
-				return;
+				return false;
 			}
 			if (!a.setAssignedThread(idleThread)) {
 				// No assignment happened - return thread to idle pool
 				idleQueue.add(idleThread);
 			} else {
 				assignmentAnnouncements.add(new Announcement(a, idleThread));
-				System.out.println("Assigned to idle: A#" + a.hashCode() + " -> " + idleThread.getName());
+				// System.out.println("Assigned to idle: A#" + a.hashCode() +
+				// " -> " + idleThread.getName());
 			}
 		}
+		return false;
 	}
 
 	/**
@@ -338,14 +359,15 @@ public class ActorSystem implements AutoCloseable {
 				assignLocalActor(context);
 			}
 
-			assignActorsToIdleThreads(context);
+			boolean unassignedActorsOnThread = assignActorsToIdleThreads(context);
 
 			Action a = context.actions.poll();
 			if (a == null) {
-				if (block) {
-					if (!announcedAsIdle) {
+				if (block || unassignedActorsOnThread) {
+					if (!announcedAsIdle && block) {
 						announcedAsIdle = true;
-						System.out.println("IDLE " + context.thread.getName());
+						// System.out.println("IDLE " +
+						// context.thread.getName());
 						idleQueue.add(context.thread);
 					}
 					Thread.sleep(50);
@@ -355,7 +377,8 @@ public class ActorSystem implements AutoCloseable {
 			}
 			announcedAsIdle = false;
 
-			System.out.println("RUN #" + a.hashCode());
+			// System.out.println("RUN #" + a.hashCode());
+
 			context.actionCount++;
 			a.execute();
 
@@ -375,6 +398,11 @@ public class ActorSystem implements AutoCloseable {
 	private static class ActorThread extends Thread {
 		public ActorThread(String name) {
 			super(name);
+		}
+
+		@Override
+		public String toString() {
+			return threadContexts.get(this).toString();
 		}
 
 		@Override
