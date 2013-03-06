@@ -62,10 +62,11 @@ public class ActorTest {
 	public void testCallToActor() throws InterruptedException {
 
 		final CountDownLatch resultComplete = new CountDownLatch(1);
+		ActorSystem.start(2);
 
 		final long start = System.nanoTime();
 
-		new RandomSum(3, 3, new Sum() {
+		new RandomSum(8, 8, new Sum() {
 			@Override
 			public void sum(long sum) {
 				System.out.println("Sum: " + sum + " after " + (System.nanoTime() - start) / 1000000 + "ms");
@@ -73,8 +74,7 @@ public class ActorTest {
 			}
 		}).process();
 
-		ActorSystem.start(10);
-		ActorSystem.process(ProcessType.UNTIL_NO_WORK);
+		ActorSystem.process(ProcessType.UNTIL_SHUTDOWN);
 
 		resultComplete.await();
 

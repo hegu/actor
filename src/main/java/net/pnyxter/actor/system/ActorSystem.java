@@ -363,7 +363,7 @@ public class ActorSystem implements AutoCloseable {
 
 			Action a = context.actions.poll();
 			if (a == null) {
-				if (block || unassignedActorsOnThread) {
+				if (block || unassignedActorsOnThread || !context.actorQueuedActions.isEmpty()) {
 					if (!announcedAsIdle && block) {
 						announcedAsIdle = true;
 						// System.out.println("IDLE " +
