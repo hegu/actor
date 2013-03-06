@@ -12,20 +12,33 @@ Only methods returning `void`and `Future<>` may be annotated with the
 `@Inbox`. This is verified on class loading better than runtime but not 
 on compile time.
   
-### void return async method
+### `void` return async method
  
-   @Actor
-   class State {
-     int counter = 0;
+    @Actor
+    class State {
+      int counter = 0;
      
-     @Inbox
-     public void increase() {
-       couunter++;
-     }
-   }
+      @Inbox
+      public void increase() {
+        counter++;
+      }
+    }
    
-### Future<> return async method
+### `Future<>` return async method
 
+To optimize the Future implementation to get support from the ActorSystem 
+the returned value should be produced using the `ActorUtil.returnFuture(...)`
+
+    @Actor
+    class State {
+      int counter = 0;
+     
+      @Inbox
+      public Future<Integer> increaseAndGet() {
+        return ActorUtil.returnFuture(counter++);
+      }
+    }
+   
 ### Thread pools and core locality optimizations
 
 When a thread pool is used to execute tasks in the actor system recent work 
