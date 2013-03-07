@@ -1,6 +1,5 @@
 package net.pnyxter.actor;
 
-import java.security.SecureRandom;
 import java.util.concurrent.CountDownLatch;
 
 import net.pnyxter.actor.system.ActorSystem;
@@ -15,33 +14,27 @@ public class ActorTest {
 	}
 
 	@Actor
-	public static class RandomSum implements Sum {
+	public static class FibonacciProblem implements Sum {
 
-		private final int depth;
-		private final int width;
+		private final long n;
 
 		private final Sum callback;
 
 		private long sum = 0;
-		private int expected = 0;
+		private int expected = 2;
 
-		public RandomSum(int depth, int width, Sum callback) {
-			this.depth = depth;
-			this.width = width;
+		public FibonacciProblem(long n, Sum callback) {
+			this.n = n;
 			this.callback = callback;
 		}
 
 		@Inbox
 		public void process() {
-			if (depth == 0) {
-				callback.sum(new SecureRandom().nextLong());
+			if (n <= 1) {
+				callback.sum(n);
 			} else {
-				sum = 0;
-				expected = width;
-
-				for (int i = 0; i < width; i++) {
-					new RandomSum(depth - 1, width, this).process();
-				}
+				new FibonacciProblem(n - 1, this).process();
+				new FibonacciProblem(n - 2, this).process();
 			}
 		}
 
@@ -62,11 +55,11 @@ public class ActorTest {
 	public void testCallToActor() throws InterruptedException {
 
 		final CountDownLatch resultComplete = new CountDownLatch(1);
-		ActorSystem.start(2);
+		// ActorSystem.start(1);
 
 		final long start = System.nanoTime();
 
-		new RandomSum(8, 8, new Sum() {
+		new FibonacciProblem(30, new Sum() {
 			@Override
 			public void sum(long sum) {
 				System.out.println("Sum: " + sum + " after " + (System.nanoTime() - start) / 1000000 + "ms");

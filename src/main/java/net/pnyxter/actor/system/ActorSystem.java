@@ -370,7 +370,7 @@ public class ActorSystem implements AutoCloseable {
 						// context.thread.getName());
 						idleQueue.add(context.thread);
 					}
-					Thread.sleep(50);
+					Thread.sleep(1);
 					continue wait_loop;
 				}
 				return ProcessStatus.EMPTY;
